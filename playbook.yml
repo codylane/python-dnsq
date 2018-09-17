@@ -1,0 +1,465 @@
+---
+
+- hosts: all
+  become: yes
+  vars:
+    dns1: dns1
+    dns2: dns2
+    domain: foo-domain.com
+    manage_resolv_conf: true
+    manage_pyenv: false
+    rndc_key_secret: 'eZ6B0A4vjLetGWwiUtyGvpD8BnvErM/LOLiNOZYYmxr4GnYegyOLxFOeciPB3pWsdISj29R0dB87mHu0rt9EOQ=='
+    rndc_key_data: |
+      key "rndc-key" {
+          algorithm hmac-sha512;
+          secret "{{ rndc_key_secret }}";
+      };
+
+  tasks:
+    - name: Fix /etc/hosts
+      tags:
+        - pre_task
+      copy:
+        dest: /etc/hosts
+        content: |
+          127.0.0.1       localhost
+          ::1             localhost ip6-localhost ip6-loopback
+          ff02::1         ip6-allnodes
+          ff02::2         ip6-allrouters
+
+          {{ ansible_eth1.ipv4.address }}    {{ ansible_nodename }}.{{ domain }}    {{ ansible_hostname }}    {{ dns1 }}.{{ domain }}    {{ dns2 }}.{{ domain }}
+      when:
+        ansible_os_family == 'Debian'
+
+    - name: Installing pre-req packages
+      tags:
+        - pre_task
+      package:
+        name: "{{ packages }}"
+        state: present
+      vars:
+        packages:
+          - apt-file
+          - build-essential
+          - curl
+          - git
+          - libapt-pkg-dev
+          - libbz2-dev
+          - libffi-dev
+          - libncurses5-dev
+          - libncursesw5-dev
+          - libreadline-dev
+          - libsqlite3-dev
+          - libssl1.0-dev
+          - llvm
+          - make
+          - tk-dev
+          - wget
+          - xz-utils
+          - zlib1g-dev
+          - dnsutils
+          - ntp
+          - ntpdate
+      when:
+        ansible_os_family == 'Debian'
+
+    - name: configure ntp.conf
+      tags:
+        - pre_task
+      notify: restart ntp
+      copy:
+        dest: /etc/ntp.conf
+        content: |
+          # /etc/ntp.conf, configuration for ntpd; see ntp.conf(5) for help
+          tinker panic
+
+          driftfile /var/lib/ntp/ntp.drift
+
+          # Enable this if you want statistics to be logged.
+          #statsdir /var/log/ntpstats/
+
+          statistics loopstats peerstats clockstats
+          filegen loopstats file loopstats type day enable
+          filegen peerstats file peerstats type day enable
+          filegen clockstats file clockstats type day enable
+
+          # You do need to talk to an NTP server or two (or three).
+          #server ntp.your-provider.example
+
+          # pool.ntp.org maps to about 1000 low-stratum NTP servers.  Your server will
+          # pick a different set every time it starts up.  Please consider joining the
+          # pool: <http://www.pool.ntp.org/join.html>
+          pool 0.debian.pool.ntp.org iburst
+          pool 1.debian.pool.ntp.org iburst
+          pool 2.debian.pool.ntp.org iburst
+          pool 3.debian.pool.ntp.org iburst
+
+          # Access control configuration; see /usr/share/doc/ntp-doc/html/accopt.html for
+          # details.  The web page <http://support.ntp.org/bin/view/Support/AccessRestrictions>
+          # might also be helpful.
+          #
+          # Note that "restrict" applies to both servers and clients, so a configuration
+          # that might be intended to block requests from certain clients could also end
+          # up blocking replies from your own upstream servers.
+
+          # By default, exchange time with everybody, but don't allow configuration.
+          restrict -4 default kod notrap nomodify nopeer noquery limited
+          restrict -6 default kod notrap nomodify nopeer noquery limited
+
+          # Local users may interrogate the ntp server more closely.
+          restrict 127.0.0.1
+          restrict ::1
+
+          # Needed for adding pool entries
+          restrict source notrap nomodify noquery
+
+          # Clients from this (example!) subnet have unlimited access, but only if
+          # cryptographically authenticated.
+          #restrict 192.168.123.0 mask 255.255.255.0 notrust
+
+          # If you want to provide time to your local subnet, change the next line.
+          # (Again, the address is an example only.)
+          #broadcast 192.168.123.255
+
+          # If you want to listen to time broadcasts on your local subnet, de-comment the
+          # next lines.  Please do this only if you trust everybody on the network!
+          #disable auth
+          #broadcastclient
+        owner: root
+        group: root
+        mode: 0644
+      when:
+        ansible_os_family == 'Debian'
+
+    - name: Create /home/vagrant/.ssh
+      tags:
+        - pre_task
+      file:
+        state: directory
+        path: /home/vagrant/.ssh
+        mode: 0700
+        owner: vagrant
+        group: vagrant
+
+    - name: Create authorized_keys
+      tags:
+        - pre_task
+      authorized_key:
+        state: present
+        path: /home/vagrant/.ssh/authorized_keys
+        exclusive: false
+        user: vagrant
+        key: "{{ ssh_keys }}"
+        validate_certs: false
+        manage_dir: false
+      vars:
+        ssh_keys: |
+          ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEA6NF8iallvQVp22WDkTkyrtvp9eWW6A8YVr+kz4TjGYe7gHzIw+niNltGEFHzD8+v1I2YJ6oXevct1YeS0o9HZyN1Q9qgCgzUFtdOKLv6IedplqoPkcmF0aYet2PkEDo3MlTBckFXPITAMzF8dJSIFo9D8HfdOV0IAdx4O7PtixWKn5y2hMNG0zQPyUecp4pzC6kivAIhyfHilFR61RGL+GPXQ2MWZWFYbAGjyiYJnAmCP3NOTd0jMZEnDkbUvxhMmBYSdETk1rRgm+R4LOzFUGaHqHDLKLX+FIPKcF96hrucXzcWyLbIbEgE98OHlnVYCzRdK8jlqm8tehUc9c9WhQ== vagrant insecure public key
+
+    - name: Download the insecure private_key for vagrant
+      tags:
+        - pre_task
+      get_url:
+        url: "{{ item.url }}"
+        dest: "/home/vagrant/.ssh/{{ item.name }}"
+        owner: vagrant
+        group: vagrant
+        mode: "{{ item.mode }}"
+      loop:
+        - url: 'https://raw.githubusercontent.com/hashicorp/vagrant/master/keys/vagrant.pub'
+          mode: '0644'
+          name: 'id_rsa.pub'
+        - url: 'https://raw.githubusercontent.com/hashicorp/vagrant/master/keys/vagrant'
+          mode: '0600'
+          name: 'id_rsa'
+
+    - name: Install bind9
+      tags:
+        - pre_task
+      package:
+        state: present
+        name: "{{ packages }}"
+      vars:
+        packages:
+          - bind9=1:9.10.3.dfsg.P4-12.3+deb9u4
+      when:
+        ansible_os_family == 'Debian'
+
+    - name: Create /etc/bind/named.conf.default-zones
+      tags:
+        - pre_task
+      copy:
+        dest: /etc/bind/named.conf.default-zones
+        content: |
+          // prime the server with knowledge of the root servers
+          zone "." {
+                  type hint;
+                  file "/etc/bind/db.root";
+          };
+
+          // be authoritative for the localhost forward and reverse zones, and for
+          // broadcast zones as per RFC 1912
+
+          zone "localhost" {
+                  type master;
+                  file "/etc/bind/db.local";
+          };
+
+          zone "127.in-addr.arpa" {
+                  type master;
+                  file "/etc/bind/db.127";
+          };
+
+          zone "0.in-addr.arpa" {
+                  type master;
+                  file "/etc/bind/db.0";
+          };
+
+          zone "255.in-addr.arpa" {
+                  type master;
+                  file "/etc/bind/db.255";
+          };
+        owner: root
+        group: bind
+        mode: 0644
+        validate: /usr/sbin/named-checkconf %s
+      when:
+        ansible_os_family == 'Debian'
+
+    - name: Create /etc/bind/rndc.conf
+      tags:
+        - pre_task
+      copy:
+        dest: /etc/bind/rndc.conf
+        content: |
+          {{ rndc_key_data }}
+
+          options {
+            default-server 127.0.0.1;
+            default-key    rndc-key;
+          };
+        owner: root
+        group: bind
+        mode: 0640
+      when:
+        ansible_os_family == 'Debian'
+
+    - name: Create /etc/bind/named.conf.local
+      tags:
+        - pre_task
+      copy:
+        dest: /etc/bind/named.conf.local
+        content: |
+          include "/etc/bind/zones.rfc1918";
+          include "/etc/bind/rndc.key";
+
+          // declares control channels to be used by the rndc utility.
+          controls {
+              inet 127.0.0.1 port 953
+              allow { 127.0.0.1; } keys { rndc-key; };
+          };
+
+          server 127.0.0.1 {
+              keys { rndc-key; };
+          };
+
+          zone "{{ domain }}" {
+              type master;
+              file "/etc/bind/db.{{ domain }}";
+          };
+
+          zone "1.168.192.in-addr.arpa" IN {
+              type master;
+              file "/etc/bind/db.192.168.1";
+          };
+        owner: root
+        group: bind
+        mode: 0644
+        validate: /usr/sbin/named-checkconf %s
+      when:
+        ansible_os_family == 'Debian'
+
+    - name: Create /etc/bind/named.conf.options
+      tags:
+        - pre_task
+      notify: restart bind
+      copy:
+        dest: /etc/bind/named.conf.options
+        content: |
+          acl foo-domain-internal {
+              0.0.0.0/0;
+          };
+
+          // acl to allow zone transfers
+          acl trusted-foo-domain-internal {
+              0.0.0.0/0;
+          };
+
+          options {
+              directory "/var/cache/bind";
+
+              // Use the following DNS fowarders to resolve queries that we cannot
+              forwarders {
+                  10.0.2.3;
+                  8.8.8.8;
+              };
+
+              allow-query {
+                  foo-domain-internal;
+              };
+
+              allow-query-cache {
+                  foo-domain-internal;
+              };
+
+              recursion yes;
+
+              allow-recursion {
+                  foo-domain-internal;
+              };
+
+              allow-transfer {
+                  trusted-foo-domain-internal;
+              };
+
+              notify yes;
+              empty-zones-enable yes;
+              dnssec-enable yes;
+              dnssec-validation yes;
+              auth-nxdomain no;    # conform to RFC1035
+              listen-on-v6 { none; };
+          };
+        owner: root
+        group: bind
+        mode: 0644
+        validate: /usr/sbin/named-checkconf %s
+      when:
+        ansible_os_family == 'Debian'
+
+    - name: Create /etc/bind/db.192.168.1
+      notify: restart bind
+      tags:
+        - pre_task
+      copy:
+        dest: /etc/bind/db.192.168.1
+        content: |
+          $TTL    2H
+          @       IN  SOA ns1.{{ domain }}. root.{{ domain }}. (
+                          2018070500  ; Serial
+                          28800       ; Refresh (8 hours)
+                          3600        ; Retry   (1 hour)
+                          604800      ; Expire  (1 week)
+                          86400       ; Minimum-TTL (24 hours)
+          )
+
+          ; NS records
+              IN  NS  ns1.{{ domain }}.
+              IN  NS  ns2.{{ domain }}.
+
+          ; PTR records
+          10  IN  PTR  {{ dns1 }}.{{ domain }}.
+          11  IN  PTR  {{ dns2 }}.{{ domain }}.
+          20  IN  PTR  dc-app-01.{{ domain }}.
+          21  IN  PTR  dc-app-02.{{ domain }}.
+          22  IN  PTR  aa-foo-01.{{ domain }}.
+          23  IN  PTR  zz-bar-01.{{ domain }}.
+        owner: root
+        group: bind
+        mode: 0644
+      when:
+        ansible_os_family == 'Debian'
+
+    - name: Create /etc/bind/db.foo-domain.com
+      tags:
+        - pre_task
+      copy:
+        dest: /etc/bind/db.{{ domain }}
+        content: |
+          $TTL    2H
+          @       IN  SOA ns1.{{ domain }}. root.{{ domain }}. (
+                          2018070500  ; Serial
+                          28800       ; Refresh (8 hours)
+                          3600        ; Retry   (1 hour)
+                          604800      ; Expire  (1 week)
+                          86400       ; Minimum-TTL (24 hours)
+          )
+
+          ; NS records
+          @   IN  NS  ns1.{{ domain }}.
+          @   IN  NS  ns2.{{ domain }}.
+
+          ; Nameserver A records
+          ns1.{{ domain }}.  IN  A  192.168.1.10
+          ns2.{{ domain }}.  IN  A  192.168.1.11
+
+          ; A records
+          dc-app-01.{{ domain }}.  IN  A  192.168.1.20
+          dc-app-02.{{ domain }}.  IN  A  192.168.1.21
+          aa-foo-01.{{ domain }}.  IN  A  192.168.1.22
+          zz-bar-01.{{ domain }}.  IN  A  192.168.1.23
+
+          ; CNAME records
+          app-01.{{ domain }}.  IN  CNAME  dc-app-01.{{ domain }}.
+          {{ dns1 }}.{{ domain }}.     IN  CNAME  ns1.{{ domain }}.
+          {{ dns2 }}.{{ domain }}.     IN  CNAME  ns2.{{ domain }}.
+        owner: root
+        group: bind
+        mode: 0644
+      when:
+        ansible_os_family == 'Debian'
+
+    - name: Create /etc/bind/rndc.key
+      tags:
+        - pre_task
+      no_log: true
+      copy:
+        dest: /etc/bind/rndc.key
+        content: "{{ rndc_key_data }}"
+        owner: root
+        group: bind
+        mode: 0640
+      when:
+        ansible_os_family == 'Debian'
+
+    - name: Start bind9
+      service:
+        name: bind9
+        state: started
+        enabled: true
+      when:
+        ansible_os_family == 'Debian'
+
+    - name: Initialize pyenv
+      command: .ci/init-pyenv
+      args:
+        chdir: /dnsq-build
+        creates: /root/.pyenv/versions/python-dnsq-2.7.15
+      when:
+        manage_pyenv == True
+
+  handlers:
+    - name: restart bind
+      service:
+        name: bind9
+        state: restarted
+      when:
+        ansible_os_family == 'Debian'
+
+    - name: restart ntp
+      service:
+        name: ntp
+        state: restarted
+      when:
+        ansible_os_family == 'Debian'
+
+  post_tasks:
+    - name: Configure /etc/resolv.conf
+      copy:
+        dest: /etc/resolv.conf
+        backup: true
+        content: |
+          search {{ domain }}
+          domain {{ domain }}
+          nameserver 127.0.0.1
+      when:
+        manage_resolv_conf == True

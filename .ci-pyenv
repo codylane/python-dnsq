@@ -1,0 +1,6 @@
+export CI_PYENV_PROJECT_NAME="python-dnsq"
+export CI_PYENV_PROJECT_PYTHON="2.7.15"
+
+install-these-pythons() {
+  install-pyenv-python "3.6.6" "PERSIST"
+}

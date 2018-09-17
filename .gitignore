@@ -1,0 +1,20 @@
+## files
+*.pyc
+.coverage
+bind.keys
+rndc.key
+ssh-config
+.python-version
+*.retry
+*.built
+*.converged
+.vaultpw
+
+## directories
+.pytest_cache/
+.tox/
+.vagrant/
+dnsq.egg-info/
+tmp/
+venv/
+jenkins-venv/

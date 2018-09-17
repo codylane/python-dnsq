@@ -1,0 +1,11 @@
+-r requirements.txt
+ansible==2.5.5
+coverage==4.5.1
+hacking==1.1.0
+invoke==1.0.0
+ipython==5.7.0
+mock==2.0.0
+pytest==3.6.3
+pytest-cov==2.5.1
+testinfra==1.14.0
+tox==3.1.2

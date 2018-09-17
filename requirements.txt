@@ -1,0 +1,2 @@
+# this file should contain only the required modules needed for dnsq
+dnspython==1.15.0

@@ -1,0 +1,176 @@
+#!/bin/bash -e
+# MIT License
+#
+# Copyright (c) 2018
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+##########################################################################
+# Description: This is helper environment configuration script for initalizing pyenv on a cicd type environment
+#
+# Variables:
+#   Replace %%PROJECT_NAME%% - With the name of your project that you are working on Ex: "codylane.pyenv"
+#   Replace %%PROJECT_PYTHON%% - With version of python you want to use in your virtualenv. Ex: "2.7.15"
+#
+# Usage:
+#   This file is meant to be sourced not executed directly.
+#   Ex:
+#     chmod 0644 enable-pyenv
+#
+# License: MIT
+# Date: 2018-08-01
+# Author: Cody Lane
+##########################################################################
+
+CMD="${BASH_SOURCE[0]}"
+BIN_DIR="${CMD%/*}"
+cd ${BIN_DIR}
+
+BIN_DIR="${PWD}"
+
+cd ${BIN_DIR}/..
+PRJ_ROOT_DIR="${PWD}"
+
+[ -f .ci-pyenv ] && . .ci-pyenv
+
+export PYENV_ROOT="${HOME}/.pyenv"
+export PATH="${PYENV_ROOT}/bin:/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin:${PATH}"
+export BIN_DIR="${BIN_DIR}"
+export PRJ_ROOT_DIR
+export VENV_NAME="${CI_PYENV_PROJECT_NAME:-%%PROJECT_NAME%%}"
+export VENV_PYTHON="${CI_PYENV_PROJECT_PYTHON:-%%PROJECT_PYTHON%%}"
+
+
+info() {
+  echo "INFO: $*"
+}
+
+
+warn() {
+  echo "WARNING: $*"
+}
+
+
+uninstall-pyenv-python() {
+  local PY_VERSION="${1}"
+  local VENV_NAME_VERSION="${VENV_NAME}-${PY_VERSION}"
+  [ -z "$PY_VERSION" ] && warn "create-pyenv-virtualenv requires an argument"
+
+  info "Uninstalling virtualenv: ${VENV_NAME_VERSION}"
+  pyenv uninstall -f "${VENV_NAME_VERSION}"
+}
+
+
+persist-python() {
+  local PY_VERSION="${1}"
+  [ -z "$PY_VERSION" ] && warn "persist-python requires an argument"
+
+  info "Persisting python: ${PY_VERSION}"
+  grep -q ${PY_VERSION} .python-version 2>>/dev/null || echo "${PY_VERSION}" >> .python-version
+}
+
+create-pyenv-virtualenv() {
+  local PY_VERSION="${1}"
+  local VENV_NAME_VERSION="${VENV_NAME}-${PY_VERSION}"
+  [ -z "$PY_VERSION" ] && warn "create-pyenv-virtualenv requires an argument"
+
+  info "Creating new virtualenv project: ${VENV_NAME_VERSION}"
+
+  install-pyenv-python "${PY_VERSION}"
+  uninstall-pyenv-python "${PY_VERSION}"
+
+  info "pyenv virtualenv '${PY_VERSION}' '${VENV_NAME_VERSION}'"
+
+  pyenv virtualenv "${PY_VERSION}" "${VENV_NAME_VERSION}"
+
+  persist-python "${VENV_NAME_VERSION}"
+
+  install-deps-into-python "${PY_VERSION}"
+}
+
+
+install-pyenv-python() {
+  local PY_VERSION="${1}"
+  local PERSIST="${2}"
+  [ -z "$PY_VERSION" ] && warn "install-pyenv-python requires an argument"
+
+  info "Installing python: ${PY_VERSION}"
+  [ -d "${PYENV_ROOT}/versions/${PY_VERSION}" ] || pyenv install ${PY_VERSION}
+
+  [ -n "${PERSIST}" ] && persist-python "${PY_VERSION}" || true
+}
+
+
+install-deps-into-python() {
+  local PY_VERSION="${1}"
+  [ -z "$PY_VERSION" ] && warn "install-deps-into-python requires an argument"
+
+  info "Upgrading pip"
+  pip install --upgrade pip
+
+  if [ -e "test-requirements.txt" ]; then
+    info "Installing test-requirements.txt into python: ${PY_VERSION}"
+    pip install -r test-requirements.txt || true
+  fi
+
+  if [ -e "setup.py" ]; then
+    info "Invoking setup.py and installing into python: ${PY_VERSION}"
+    pip install -e . || true
+  fi
+
+  pip list
+
+  pyenv rehash
+}
+
+
+display-vars() {
+  echo "CMD: ${CMD}"
+  echo "BIN_DIR: ${BIN_DIR}"
+  echo "PRJ_ROOT_DIR: ${PRJ_ROOT_DIR}"
+  echo "PYENV_ROOT: ${PYENV_ROOT}"
+  echo "VENV_NAME: ${VENV_NAME}"
+  echo "VENV_PYTHON: ${VENV_PYTHON}"
+}
+
+
+validate-required-vars() {
+  [ -z "${BIN_DIR}" ] && warn "Please set BIN_DIR" || true
+  [ -z "${PRJ_ROOT_DIR}" ] && warn "Please set PRJ_ROOT_DIR" || true
+  [ -z "$PYENV_ROOT" ] && warn "Please set PYENV_ROOT" || true
+  [ -z "${VENV_NAME}" ] && warn "Please set VENV_NAME" || true
+  [ -z "${VENV_PYTHON}" ] && warn "Please set VENV_PYTHON" || true
+}
+
+
+## main ##
+
+echo "INFO: running in directory $PRJ_ROOT_DIR"
+display-vars
+
+
+validate-required-vars
+
+[ -d "${PYENV_ROOT}" ] || git clone https://github.com/pyenv/pyenv.git ${PYENV_ROOT}
+[ -d "${PYENV_ROOT}/plugins/pyenv-virtualenv" ] || git clone https://github.com/pyenv/pyenv-virtualenv.git "${PYENV_ROOT}/plugins/pyenv-virtualenv"
+
+[ -d "${PYENV_ROOT}" ] && eval "$(pyenv init -)"
+[ -d "${PYENV_ROOT}/plugins/pyenv-virtualenv" ] && eval "$(pyenv virtualenv-init -)"
+
+pyenv rehash
