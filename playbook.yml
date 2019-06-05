@@ -181,7 +181,7 @@
         name: "{{ packages }}"
       vars:
         packages:
-          - bind9=1:9.10.3.dfsg.P4-12.3+deb9u4
+          - bind9
       when:
         ansible_os_family == 'Debian'
 

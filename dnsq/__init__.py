@@ -109,6 +109,10 @@ def create_resolver(search=None, nameservers=None, lifetime=DEFAULT_LIFETIME, ti
     resolver.lifetime = lifetime
     resolver.timeout = timeout
 
+    # bugfix when client resolver does not have a <search domain.foo.bar>
+    if not resolver.search:
+        resolver.search = [resolver.domain.to_text().rstrip('.')]
+
     if search:
         resolver.search = [get_resolver_domain_type(domain=search)]
         resolver.domain = resolver.search[0]

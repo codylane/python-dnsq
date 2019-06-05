@@ -26,7 +26,7 @@ def test_bind9_is_installed(host):
     bind9 = host.package('bind9')
 
     assert bind9.is_installed
-    assert bind9.version == '1:9.10.3.dfsg.P4-12.3+deb9u4'
+    assert bind9.version == '1:9.10.3.dfsg.P4-12.3+deb9u5'
 
 
 def test_bind9_config_files_contain_no_syntax_errors(host):
