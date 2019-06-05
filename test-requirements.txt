@@ -1,5 +1,5 @@
 -r requirements.txt
-ansible==2.5.5
+ansible
 coverage==4.5.1
 hacking==1.1.0
 invoke==1.0.0
