@@ -3,6 +3,8 @@ dnsq
 
 A small python wrapper for `dnspython` to query information from DNS
 
+NOTE: This show cases a pytest plugin for a System Under Test (SUT) that I was experimenting with. Yes. I have an officialy product but it's not open to the public yet.
+
 
 # Requirements
 
