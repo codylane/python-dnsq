@@ -69,7 +69,7 @@ setup(
     author_email=release.__author_email__,
     maintainer=release.__author__,
     maintainer_email=release.__author_email__,
-    license='Apache Software License 2.0',
+    license='Apache-2.0',
     packages=find_packages(exclude=EXCLUDE_FROM_PACKAGES),
     url=release.__url__,
     description='A python utility for querying information in DNS',
